@@ -41,6 +41,19 @@ Rules:
 """.strip()
 
 
+LANGUAGE_INSTRUCTIONS = {
+    "auto": "Reply in the same language as the user. If they mix Hindi and English, use natural Hinglish.",
+    "english": "Reply only in clear English, even if the user writes in another language.",
+    "hindi": "Reply only in Hindi using Devanagari script, even if the user writes in English.",
+}
+
+LANGUAGE_LABELS = {
+    "auto": "Auto detect",
+    "english": "English",
+    "hindi": "Hindi",
+}
+
+
 @dataclass
 class ChatConfig:
     """Centralized chatbot settings."""
@@ -50,6 +63,7 @@ class ChatConfig:
     top_p: float = 0.9
     max_output_tokens: int = 800
     max_history_messages: int = 16
+    language: str = "auto"
 
 
 @dataclass
@@ -89,13 +103,16 @@ class TaxSaathiBot:
     """Gemini-powered chatbot with memory, stats, and JSON export."""
 
     def __init__(self, config: Optional[ChatConfig] = None) -> None:
-        load_dotenv()
+        project_dir = Path(__file__).parent
+        env_path = project_dir / ".env"
+        load_dotenv(env_path)
 
-        api_key = os.getenv("GEMINI_API_KEY")
+        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         if not api_key:
             raise EnvironmentError(
-                "GEMINI_API_KEY not found. Create a .env file with "
-                "GEMINI_API_KEY=your_key_here or set it in your terminal."
+                f"Gemini API key not found. Create {env_path} with "
+                "GEMINI_API_KEY=your_key_here. Do not put the real key in "
+                ".env.example."
             )
 
         self.config = config or ChatConfig()
@@ -103,8 +120,33 @@ class TaxSaathiBot:
         self.history: list[Message] = []
         self.stats = ConversationStats()
         self.session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.sessions_dir = Path(__file__).parent / "sessions"
+        self.sessions_dir = project_dir / "sessions"
         self.sessions_dir.mkdir(exist_ok=True)
+        self.set_language(self.config.language)
+
+    def set_language(self, language: str) -> None:
+        """Set response language to auto, English, or Hindi."""
+        self.config.language = self._normalize_language(language)
+
+    def _normalize_language(self, language: str) -> str:
+        cleaned = (language or "auto").strip().lower()
+        aliases = {
+            "auto detect": "auto",
+            "auto-detect": "auto",
+            "automatic": "auto",
+            "eng": "english",
+            "en": "english",
+            "hi": "hindi",
+            "hin": "hindi",
+        }
+        cleaned = aliases.get(cleaned, cleaned)
+        if cleaned not in LANGUAGE_INSTRUCTIONS:
+            return "auto"
+        return cleaned
+
+    def _system_instruction(self) -> str:
+        language_rule = LANGUAGE_INSTRUCTIONS[self.config.language]
+        return f"{SYSTEM_PROMPT}\n\nOutput language rule: {language_rule}"
 
     def _gemini_history(self, user_input: str) -> list[types.Content]:
         turns = [
@@ -133,7 +175,7 @@ class TaxSaathiBot:
                 model=self.config.model,
                 contents=self._gemini_history(user_input),
                 config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_PROMPT,
+                    system_instruction=self._system_instruction(),
                     temperature=self.config.temperature,
                     top_p=self.config.top_p,
                     max_output_tokens=self.config.max_output_tokens,
@@ -165,7 +207,8 @@ class TaxSaathiBot:
             f"Calls: {self.stats.total_calls} | "
             f"Prompt tokens: {self.stats.total_prompt_tokens:,} | "
             f"Output tokens: {self.stats.total_output_tokens:,} | "
-            f"Total tokens: {self.stats.total_tokens:,}"
+            f"Total tokens: {self.stats.total_tokens:,} | "
+            f"Language: {LANGUAGE_LABELS[self.config.language]}"
         )
 
     def export_conversation(self) -> Path:
@@ -188,11 +231,14 @@ class TaxSaathiBot:
 
 def print_help() -> None:
     print("\nCommands:")
-    print("  help   - Show commands")
-    print("  stats  - Show Gemini token usage")
-    print("  reset  - Clear chat memory")
-    print("  export - Save this conversation as JSON")
-    print("  quit   - Export and exit")
+    print("  help              - Show commands")
+    print("  stats             - Show Gemini token usage")
+    print("  language auto     - Match the user's language")
+    print("  language english  - Always answer in English")
+    print("  language hindi    - Always answer in Hindi")
+    print("  reset             - Clear chat memory")
+    print("  export            - Save this conversation as JSON")
+    print("  quit              - Export and exit")
     print("\nAsk anything about Indian tax, GST, TDS, deductions, or ITR filing.\n")
 
 
@@ -202,7 +248,16 @@ def run_cli() -> None:
     print("=" * 64)
     print("Type 'help' for commands or 'quit' to exit.\n")
 
-    bot = TaxSaathiBot()
+    try:
+        bot = TaxSaathiBot()
+    except EnvironmentError as exc:
+        print(f"Setup error: {exc}")
+        print("\nFix:")
+        print("  1. In Week_1\\Projects\\taxsaathi, create a file named .env")
+        print("  2. Add this line: GEMINI_API_KEY=your_real_gemini_key")
+        print("  3. Run again: python main.py")
+        return
+
     print("TaxSaathi: Namaste! Ask me an Indian tax question.\n")
 
     while True:
@@ -216,6 +271,32 @@ def run_cli() -> None:
             continue
 
         command = user_input.lower()
+        if command in {"language", "lang"}:
+            print(f"Current language: {LANGUAGE_LABELS[bot.config.language]}")
+            print("Use: language auto | language english | language hindi")
+            continue
+
+        if command.startswith("language ") or command.startswith("lang "):
+            requested_language = command.split(maxsplit=1)[1]
+            normalized_language = bot._normalize_language(requested_language)
+            cleaned_language = requested_language.strip().lower()
+            accepted_inputs = set(LANGUAGE_INSTRUCTIONS) | {
+                "auto detect",
+                "auto-detect",
+                "automatic",
+                "eng",
+                "en",
+                "hi",
+                "hin",
+            }
+            if cleaned_language not in accepted_inputs:
+                print("Unknown language. Use: auto, english, or hindi.")
+                continue
+
+            bot.set_language(normalized_language)
+            print(f"Response language set to: {LANGUAGE_LABELS[bot.config.language]}")
+            continue
+
         if command in {"quit", "exit", "bye"}:
             export_path = bot.export_conversation()
             print(f"\nConversation exported to: {export_path}")
@@ -249,4 +330,17 @@ def run_cli() -> None:
 
 if __name__ == "__main__":
     run_cli()
+
+
+
+
+
+
+
+
+
+
+
+
+
 
