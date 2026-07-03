@@ -58,7 +58,7 @@ LANGUAGE_LABELS = {
 class ChatConfig:
     """Centralized chatbot settings."""
 
-    model: str = "gemini-2.5-flash"
+    model: str = "gemini-3.5-flash"
     temperature: float = 0.2
     top_p: float = 0.9
     max_output_tokens: int = 800
