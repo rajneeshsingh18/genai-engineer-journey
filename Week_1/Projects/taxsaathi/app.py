@@ -7,11 +7,18 @@ Run:
 
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 import gradio as gr
 
 from main import ChatConfig, Message, TaxSaathiBot
+
+# Fix Windows console encoding issues for Unicode (like ₹ and Hindi characters)
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
 
 
 LANGUAGE_CHOICES = [

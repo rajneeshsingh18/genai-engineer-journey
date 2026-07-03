@@ -1,4 +1,4 @@
-﻿"""
+"""
 TaxSaathi - Indian tax assistant chatbot using the Gemini API.
 
 Run:
@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -17,6 +18,12 @@ from typing import Optional
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+
+# Fix Windows console encoding issues for Unicode (like ₹ and Hindi characters)
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
 
 
 SYSTEM_PROMPT = """
@@ -61,7 +68,7 @@ class ChatConfig:
     model: str = "gemini-3.5-flash"
     temperature: float = 0.2
     top_p: float = 0.9
-    max_output_tokens: int = 800
+    max_output_tokens: int = 10000 
     max_history_messages: int = 16
     language: str = "auto"
 

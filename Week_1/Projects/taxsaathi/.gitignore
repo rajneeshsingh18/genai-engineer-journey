@@ -8,3 +8,5 @@ __pycache__/
 sessions/*.json
 replacements.txt
 project_explanation.md
+
+code_boilerplate_quide.md
